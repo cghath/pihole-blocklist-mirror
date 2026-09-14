@@ -1,0 +1,45 @@
+name: Sync blocklists
+
+on:
+  schedule:
+    - cron: "0 6 * * *"   # daily, 06:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch latest lists
+        run: |
+          set -u
+          fetch() {
+            local url="$1" dest="$2" tmp
+            tmp="$(mktemp)"
+            if curl -sSL -f -o "$tmp" "$url" && [ -s "$tmp" ]; then
+              mv "$tmp" "$dest"
+              echo "OK: $url"
+            else
+              echo "::warning::Fetch failed for $url - keeping existing $dest unchanged"
+              rm -f "$tmp"
+            fi
+          }
+          fetch "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts" "lists/stevenblack-hosts.txt"
+          fetch "https://perflyst.github.io/PiHoleBlocklist/SmartTV.txt" "lists/perflyst-smarttv.txt"
+          fetch "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/domains/pro.txt" "lists/hagezi-pro.txt"
+
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add lists/
+          if git diff --cached --quiet; then
+            echo "No changes."
+          else
+            git commit -m "Sync blocklists $(date -u +%Y-%m-%d)"
+            git push
+          fi
